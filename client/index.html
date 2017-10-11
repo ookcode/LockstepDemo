@@ -7,10 +7,20 @@
 	<script src="ref/jquery.min.js"></script>
 	<script src="ref/socket.io.js"></script>
 	<script src="main.js"></script>
-	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 </head>
 <body>
-	<canvas id="canvas" width="320" height="400"></canvas>
-	<button id = "ready" style="font-size: 30px; margin: auto; display: block;">Ready</button>
+	<div id="content">
+		<canvas id="canvas" width="320" height="400"></canvas>
+		<button id="loss_btn">模拟丢包</button>
+		<button id="reconnect_btn">断线重连</button>
+		<p id="bottom_tips">Tips:键盘上下左右键移动方块，回车键停止方块。</p>
+	</div>
+	<div id="login">
+		<p id="title">帧同步小游戏</p>
+		<input type="text" id="account" />
+		<button id="start_btn">开始游戏</button>
+	</div>
+	<div id="tips"></div>
 </body>
 </html>

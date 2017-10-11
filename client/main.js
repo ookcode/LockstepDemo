@@ -7,6 +7,15 @@ var DIRECTION = {
 	RIGHT:5
 }
 
+// 方向枚举的字符串，仅用于log
+var DIRECTION_STR = {
+	1:"STOP",
+	2:"UP",
+	3:"DOWN",
+	4:"LEFT",
+	5:"RIGH"
+}
+
 // 游戏状态枚举
 var STATUS = {
 	WAIT:1,
@@ -54,23 +63,34 @@ $(function () {
 	var gameStatus = STATUS.WAIT;
 	// 接受指令
 	var recvCommands = new Array();
+	// 未能按时到达的指令
+	var delayCommands = new Array();
 	// 所有游戏对象
 	var gameObjects = {}
-	// 自己的ID
-	var myPlayerId = null;
+	// 判断掉线，暂停游戏
+	var isNetDelay = false;
+	// 是否连接socket
+	var isConnected = false;
 	// 模拟丢包计数
 	var simulateLossCount = 0;
+	// 模拟正常的30ms网络延迟
+	var simulateNetDelay = 30;
+
+	// 初始化UI显示
+	$("#content").hide();
+	$("#login").show();
+	$("#tips").hide();
 
 	// 连接socket
 	socket = io.connect('http://localhost:3000');
 
 	// socket连接成功
 	socket.on('open', function(id) {
-		myPlayerId = id;
-		console.log("ID =",id);
+		isConnected = true;
+		console.log("Socket连接成功：",id);
 	});
 
-	// 收到游戏开始时间
+	// 收到游戏开始事件
 	socket.on('start',function(json) {
 		// 初始化GameObject
 		for(var i = 0; i < json.player.length; ++i) {
@@ -78,32 +98,46 @@ $(function () {
 			gameObjects[id] = new GameObject(id);
 		}
 		gameStartTime = json.time;
+		// 处理重连
+		var delay = Date.now() - gameStartTime;
+		if(delay > 0) {
+			stepTime = parseInt(delay / stepInterval / 1000);
+		}
 		console.log("游戏预计开始时间:", gameStartTime);
 	});
 
-	// 收到游戏结束消息
-	socket.on('over',function(json) {
-		console.log("其他玩家离开游戏，游戏结束！")
-		gameObjects = {};
-		inputDirection = null;
-		recvCommands = new Array();
-		stepTime = 0;
-		gameStartTime = 0;
-		gameStatus = STATUS.WAIT;
-		$('#ready').show();
-		context.clearRect(0, 0, 600, 400);
+	// 收到加入游戏结果
+	socket.on('join',function(json) {
+		showTips(json.message);
+		if(json.result) {
+			$("#login").hide();
+			$("#content").show();
+		}
 	});
 
-	// 房间已满的消息
-	socket.on('full',function() {
-		console.log("游戏已经开始，无法加入！")
-		$('#ready').show();
+	// 收到系统消息
+	socket.on('system',function(msg) {
+		showTips(msg);
 	});
 
 	// 收到指令
 	socket.on('message',function(json){
+		// 模拟丢包
+		if(simulateLossCount > 0) {
+			delayCommands = delayCommands.concat(json);
+			simulateLossCount--;
+			return;
+		}
+
 		// 储存收到的指令
+		recvCommands = recvCommands.concat(delayCommands);
 		recvCommands = recvCommands.concat(json);
+		delayCommands = new Array();
+	});
+
+	// 断线
+	socket.on('disconnect',function() {
+		showTips("与服务器断开连接!")
 	});
 
 	// 发送指令
@@ -115,9 +149,8 @@ $(function () {
 			socket.emit("message", {
 				direction: direction,
 				time:time,
-				id:myPlayerId
 			});
-		}, 30);
+		}, simulateNetDelay);
 	}
 
 	// step定时器
@@ -126,12 +159,28 @@ $(function () {
 		if(stepTime == 1) {
 			return;
 		}
+
+		// 判断丢包
+		if(recvCommands.length == 0) {
+			isNetDelay = true;
+			console.log("Step:", stepTime, "丢包，暂停游戏")
+		} else {
+			isNetDelay = false;
+			console.log("Step:", stepTime, "收到指令", Date.now())
+		}
+		
 		// 执行指令
 		for(var i = 0; i < recvCommands.length; ++i) {
 			var command = recvCommands[i];
 			var obj = gameObjects[command.id];
 			if(command.direction) {
 				obj.direction = command.direction;
+			}
+			// 丢包补偿
+			var delay = stepTime - command.time - 2;
+			if(delay > 0 && obj.direction != DIRECTION.STOP) {
+				obj.move(stepInterval);
+				console.log("Step:", stepTime, obj.id, "补偿Step:", command.time + 2, "方向:", DIRECTION_STR[obj.direction]);
 			}
 		}
 		recvCommands = new Array();
@@ -150,7 +199,9 @@ $(function () {
 			context.clearRect(0, 0, 600, 400);
 			for(var key in gameObjects) {
 				var obj = gameObjects[key];
-				obj.move(dt)
+				if(!isNetDelay) {
+					obj.move(dt)
+				}
 				context.fillStyle = "#000000";
 				context.fillRect(obj.x, obj.y, 30, 30);
 			}
@@ -182,13 +233,41 @@ $(function () {
 		sendCommand();
 	});
 
-	// 发送准备消息
-	$('#ready').click(function(){
-		if(myPlayerId == null) {
-			console.log("连接服务器失败！");
-			return;
+	// 开始游戏
+	$('#start_btn').click(function(){
+		var account = $("#account").val();
+		if(isConnected == false) {
+			showTips("连接服务器失败！");
+		} else if(account == "") {
+			showTips("账号不能为空！")
+		} else {
+			socket.emit("join", account);
 		}
-		$('#ready').hide();
-		socket.emit("join");
+	});
+
+	// 模拟增加20帧丢包
+	$('#loss_btn').click(function(){
+		simulateLossCount += 20;
+	});
+
+	// 断线重连
+	$('#reconnect_btn').click(function(){
+		location.reload();
 	});
 });
+
+// 弹一个Tips
+function showTips(str) {
+	var width = str.length * 20 + 50;
+	var halfScreenWidth = $(window).width() / 2;
+	var halfScreenHeight = $(window).height() / 2;
+	$("#tips").stop();
+	$("#tips").show();
+	$("#tips").text(str);
+	$("#tips").css("width", width);
+	$("#tips").css("top", halfScreenHeight);
+	$("#tips").css("left", halfScreenWidth - width / 2);
+	$("#tips").animate({top:halfScreenHeight - 100});
+	$("#tips").fadeOut();
+	console.log(str);
+}
