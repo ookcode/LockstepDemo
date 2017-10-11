@@ -1,0 +1,9 @@
+* {
+    padding:0px; margin:0px;
+}
+body {
+    margin:0px;
+}
+#canvas{
+   border: 1px solid #ADACB0;
+}

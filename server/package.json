@@ -1,0 +1,11 @@
+{
+	"name": "websocket-demo",
+	"version": "0.0.1",
+	"private": true,
+	"scripts": {
+		"start": "node app"
+	},
+	"dependencies": {
+		"socket.io": ">=0.9.16"
+	}
+}
