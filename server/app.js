@@ -22,10 +22,9 @@ io.on('connection', function (socket) {
 	socket.on('join', function() {
 		if(g_joinCount == g_maxJoinCount) {
 			console.log("游戏已经开始，", socket.id, "加入失败");
-			socket.emit('full');
+			socket.disconnect();
 			return;
 		}
-
 		if(g_joinCount < g_maxJoinCount) {
 			console.log(socket.id, "加入游戏")
 			g_onlines[socket.id] = {socket: socket};
@@ -36,9 +35,7 @@ io.on('connection', function (socket) {
 			g_gameStartTime = Date.now() + 500;
 			g_commands = new Array();
 			console.log("游戏预计开始时间:", g_gameStartTime);
-			for(var key in g_onlines) {
-				g_onlines[key].socket.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines)});
-			}
+			io.sockets.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines)});
 		}
 	});
 
@@ -60,7 +57,7 @@ io.on('connection', function (socket) {
 			g_gameStartTime = 0;
 			g_gameStatus = STATUS.WAIT;
 			io.sockets.emit('over');
-			g_onlines = {};
+			delete g_onlines[socket.id];
 		}
 	});
 });
@@ -74,9 +71,7 @@ function stepUpdate() {
 
 	// 模拟30ms的正常网络延迟，发送指令
 	setTimeout(function(){
-		for(var key in g_onlines) {
-			g_onlines[key].socket.emit('message', message);
-		}
+		io.sockets.emit('message', message);
 	}, 30);
 }
 

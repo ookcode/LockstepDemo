@@ -10,8 +10,7 @@ var DIRECTION = {
 // 游戏状态枚举
 var STATUS = {
 	WAIT:1,
-	START:2,
-	END:3
+	START:2
 }
 
 // 游戏对象
@@ -58,8 +57,6 @@ $(function () {
 	var gameObjects = {}
 	// 自己的ID
 	var myPlayerId = null;
-	// 模拟丢包计数
-	var simulateLossCount = 0;
 
 	// 连接socket
 	socket = io.connect('http://localhost:3000');
@@ -67,7 +64,7 @@ $(function () {
 	// socket连接成功
 	socket.on('open', function(id) {
 		myPlayerId = id;
-		console.log("ID =",id);
+		console.log("Socket连接成功：",id);
 	});
 
 	// 收到游戏开始时间
@@ -94,16 +91,15 @@ $(function () {
 		context.clearRect(0, 0, 600, 400);
 	});
 
-	// 房间已满的消息
-	socket.on('full',function() {
-		console.log("游戏已经开始，无法加入！")
-		$('#ready').show();
-	});
-
 	// 收到指令
 	socket.on('message',function(json){
 		// 储存收到的指令
 		recvCommands = recvCommands.concat(json);
+	});
+
+	// 断开连接
+	socket.on('disconnect',function(){
+		console.log("与服务器断开连接！")
 	});
 
 	// 发送指令
@@ -115,7 +111,6 @@ $(function () {
 			socket.emit("message", {
 				direction: direction,
 				time:time,
-				id:myPlayerId
 			});
 		}, 30);
 	}
