@@ -118,6 +118,7 @@ $(function () {
 	// step定时器
 	function stepUpdate() {
 		stepTime++;
+		console.log("Step", stepTime)
 		if(stepTime == 1) {
 			return;
 		}
