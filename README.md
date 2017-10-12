@@ -2,6 +2,8 @@
 一个乐观帧同步的最简单示例。
 * node.js+socket.io开发
 
+相关代码解析请参考我的博客[《帧同步的实现Part1 - 客户端与服务端》](http://www.jianshu.com/p/5a6d25db3914)
+
 ## 如何运行
 * 服务端
 ```shell
