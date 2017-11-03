@@ -153,8 +153,9 @@ $(function () {
 		diffCount++;
 		totalDiff += diff;
 		if(diffCount > 60) {
+			$("#lag").text("延迟：" + delay + "ms")
 			diff = Math.round(totalDiff / diffCount)
-			console.log(now, client, server, diff)
+			// console.log(now, client, server, diff)
 			timeDiff += diff
 			diffCount = 0
 			totalDiff = 0
