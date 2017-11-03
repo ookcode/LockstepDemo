@@ -75,11 +75,17 @@ $(function () {
 	var simulateLossCount = 0;
 	// 模拟正常的30ms网络延迟
 	var simulateNetDelay = 30;
+	// 时差
+	var timeDiff = 0
 
 	// 初始化UI显示
 	$("#content").hide();
 	$("#login").show();
 	$("#tips").hide();
+
+	function getTime() {
+		return Date.now() + timeDiff
+	}
 
 	// 连接socket
 	socket = io.connect('http://localhost:3000');
@@ -99,7 +105,7 @@ $(function () {
 		}
 		gameStartTime = json.time;
 		// 处理重连
-		var delay = Date.now() - gameStartTime;
+		var delay = getTime() - gameStartTime;
 		if(delay > 0) {
 			stepTime = parseInt(delay / stepInterval / 1000);
 		}
@@ -135,6 +141,26 @@ $(function () {
 		delayCommands = new Array();
 	});
 
+	// 对时
+	var totalDiff = 0
+	var diffCount = 0
+	socket.on('timeSync',function(json) {
+		var client = json.client;
+		var server = json.server;
+		var now = getTime();
+		var delay = now - client;
+		var diff = server - (client + delay / 2);
+		diffCount++;
+		totalDiff += diff;
+		if(diffCount > 60) {
+			diff = Math.round(totalDiff / diffCount)
+			console.log(now, client, server, diff)
+			timeDiff += diff
+			diffCount = 0
+			totalDiff = 0
+		}
+	});
+
 	// 断线
 	socket.on('disconnect',function() {
 		showTips("与服务器断开连接!")
@@ -166,7 +192,7 @@ $(function () {
 			console.log("Step:", stepTime, "丢包，暂停游戏")
 		} else {
 			isNetDelay = false;
-			console.log("Step:", stepTime, "收到指令", Date.now())
+			console.log("Step:", stepTime, "收到指令", getTime())
 		}
 		
 		// 执行指令
@@ -189,7 +215,7 @@ $(function () {
 	// frame定时器
 	var stepUpdateCounter = 0;
 	function update(dt) {
-		var now = Date.now();
+		var now = getTime();
 		if(gameStatus == STATUS.START) {
 			stepUpdateCounter += dt;
 			if(stepUpdateCounter >= stepInterval) {
@@ -212,12 +238,15 @@ $(function () {
 	}
 
 	// 启动定时器
-	var lastUpdate = Date.now();
+	var lastUpdate = getTime();
 	setInterval(function() {
-		var now = Date.now();
+		var now = getTime();
 		var dt = (now - lastUpdate) / 1000;
 		lastUpdate = now;
 		update(dt)
+		if(isConnected == true) {
+			socket.emit("timeSync", now);
+		}
 	});
 
 	// 键盘事件

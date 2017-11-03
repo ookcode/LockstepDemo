@@ -69,6 +69,10 @@ io.on('connection', function (socket) {
 		}
 	});
 
+	socket.on('timeSync', function(time) {
+		socket.emit('timeSync', {client:time, server:Date.now()});
+	});
+
 	socket.on('message', function(json) {
 		if(g_gameStatus == STATUS.START) {
 			if(json.time != g_stepTime) {
