@@ -9,7 +9,6 @@ var g_maxJoinCount = 2; // 最大人数
 var g_stepTime = 0; // 当前step时间戳
 var g_stepInterval = 0.20; // 每个step的间隔
 var g_gameStartTime = 0; // 游戏开始时间
-var g_simulateNetDelay = 30; // 模拟正常的30ms网络延迟
 
 // 游戏状态枚举
 var STATUS = {
@@ -122,15 +121,13 @@ function stepUpdate() {
 	}
 	g_commands = new Array();
 
-	// 模拟30ms的正常网络延迟，发送指令
-	setTimeout(function(){
-		var commands = new Array();
-		for(var key in message) {
-			commands.push(message[key]);
-		}
-		g_commands_histroy = g_commands_histroy.concat(commands);
-		io.sockets.emit('message', commands);
-	}, g_simulateNetDelay);
+	// 发送指令
+	var commands = new Array();
+	for(var key in message) {
+		commands.push(message[key]);
+	}
+	g_commands_histroy = g_commands_histroy.concat(commands);
+	io.sockets.emit('message', commands);
 }
 
 // frame定时器

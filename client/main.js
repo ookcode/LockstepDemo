@@ -73,8 +73,6 @@ $(function () {
 	var isConnected = false;
 	// 模拟丢包计数
 	var simulateLossCount = 0;
-	// 模拟正常的30ms网络延迟
-	var simulateNetDelay = 30;
 	// 时差
 	var timeDiff = 0
 
@@ -88,7 +86,7 @@ $(function () {
 	}
 
 	// 连接socket
-	socket = io.connect('http://localhost:3000');
+	socket = io.connect('http://120.78.185.209:3000');
 
 	// socket连接成功
 	socket.on('open', function(id) {
@@ -169,15 +167,12 @@ $(function () {
 
 	// 发送指令
 	function sendCommand() {
-		// 模拟30ms的正常网络延迟
 		var direction = inputDirection;
 		var time = stepTime;
-		setTimeout(function(){
-			socket.emit("message", {
-				direction: direction,
-				time:time,
-			});
-		}, simulateNetDelay);
+		socket.emit("message", {
+			direction: direction,
+			time:time,
+		});
 	}
 
 	// step定时器
