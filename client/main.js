@@ -31,6 +31,7 @@ var GameObject = function(id) {
 	this.direction = DIRECTION.STOP;
 	this.speed = 100;
 	this.move = function (dt) {
+		dt = dt / 1000;
 		switch(this.direction) {
 			case DIRECTION.UP:
 				this.y -= this.speed * dt;
@@ -51,8 +52,8 @@ var GameObject = function(id) {
 $(function () {
 	// 画布
 	var context = document.getElementById("canvas").getContext("2d");
-	// 每个step的间隔
-	var stepInterval = 0.20;
+	// 每个step的间隔ms，服务器返回
+	var stepInterval = 0;
 	// 当前step时间戳
 	var stepTime = 0;
 	// 游戏开始时间
@@ -63,17 +64,13 @@ $(function () {
 	var gameStatus = STATUS.WAIT;
 	// 接受指令
 	var recvCommands = new Array();
-	// 未能按时到达的指令
-	var delayCommands = new Array();
 	// 所有游戏对象
 	var gameObjects = {}
 	// 判断掉线，暂停游戏
 	var isNetDelay = false;
 	// 是否连接socket
 	var isConnected = false;
-	// 模拟丢包计数
-	var simulateLossCount = 0;
-	// 时差
+	// 和服务器时间差异
 	var timeDiff = 0
 
 	// 初始化UI显示
@@ -81,6 +78,7 @@ $(function () {
 	$("#login").show();
 	$("#tips").hide();
 
+	// 服务器时间，用于统一开始时间线
 	function getTime() {
 		return Date.now() + timeDiff
 	}
@@ -89,9 +87,11 @@ $(function () {
 	socket = io.connect('http://120.78.185.209:3000');
 
 	// socket连接成功
-	socket.on('open', function(id) {
+	socket.on('open', function(json) {
 		isConnected = true;
-		console.log("Socket连接成功：",id);
+		stepInterval = json.stepInterval
+		id = json.id
+		console.log("Socket连接成功：", id);
 	});
 
 	// 收到游戏开始事件
@@ -102,11 +102,7 @@ $(function () {
 			gameObjects[id] = new GameObject(id);
 		}
 		gameStartTime = json.time;
-		// 处理重连
-		var delay = getTime() - gameStartTime;
-		if(delay > 0) {
-			stepTime = parseInt(delay / stepInterval / 1000);
-		}
+		stepTime = json.stepTime;
 		console.log("游戏预计开始时间:", gameStartTime);
 	});
 
@@ -126,37 +122,18 @@ $(function () {
 
 	// 收到指令
 	socket.on('message',function(json){
-		// 模拟丢包
-		if(simulateLossCount > 0) {
-			delayCommands = delayCommands.concat(json);
-			simulateLossCount--;
-			return;
-		}
-
 		// 储存收到的指令
-		recvCommands = recvCommands.concat(delayCommands);
 		recvCommands = recvCommands.concat(json);
-		delayCommands = new Array();
 	});
 
 	// 对时
-	var totalDiff = 0
-	var diffCount = 0
 	socket.on('timeSync',function(json) {
 		var client = json.client;
 		var server = json.server;
-		var now = getTime();
-		var delay = now - client;
-		var diff = server - (client + delay / 2);
-		diffCount++;
-		totalDiff += diff;
-		if(diffCount > 60) {
-			$("#lag").text("延迟：" + delay + "ms")
-			diff = Math.round(totalDiff / diffCount)
-			// console.log(now, client, server, diff)
-			timeDiff += diff
-			diffCount = 0
-			totalDiff = 0
+		var delay = Date.now() - client; // 网络延迟
+		$("#lag").text("延迟：" + delay + "ms")
+		if(delay < 100) {
+			timeDiff = Math.round(server - (client - delay / 2));
 		}
 	});
 
@@ -168,50 +145,49 @@ $(function () {
 	// 发送指令
 	function sendCommand() {
 		var direction = inputDirection;
-		var time = stepTime;
 		socket.emit("message", {
 			direction: direction,
-			time:time,
+			time:stepTime,
 		});
 	}
 
 	// step定时器
 	function stepUpdate() {
 		stepTime++;
-		if(stepTime == 1) {
-			return;
-		}
 
-		// 判断丢包
-		if(recvCommands.length == 0) {
-			isNetDelay = true;
-			console.log("Step:", stepTime, "丢包，暂停游戏")
-		} else {
-			isNetDelay = false;
-			console.log("Step:", stepTime, "收到指令", getTime())
-		}
-		
 		// 执行指令
+		var hasCurrentStepCommands = false;
 		for(var i = 0; i < recvCommands.length; ++i) {
 			var command = recvCommands[i];
 			var obj = gameObjects[command.id];
 			if(command.direction) {
 				obj.direction = command.direction;
 			}
-			// 丢包补偿
-			var delay = stepTime - command.time - 2;
-			if(delay > 0 && obj.direction != DIRECTION.STOP) {
+			var delay = stepTime - command.time - 1;
+			if(delay == 0) {
+				hasCurrentStepCommands = true;
+				console.log("Step:", stepTime, obj.id, "执行Step:", command.time, "方向:", DIRECTION_STR[obj.direction]);
+			} else {
+				// 丢包补偿
 				obj.move(stepInterval);
-				console.log("Step:", stepTime, obj.id, "补偿Step:", command.time + 2, "方向:", DIRECTION_STR[obj.direction]);
+				console.log("Step:", stepTime, obj.id, "补偿Step:", command.time, "方向:", DIRECTION_STR[obj.direction]);
 			}
 		}
 		recvCommands = new Array();
+
+		// 丢包暂停
+		if(hasCurrentStepCommands) {
+			isNetDelay = false;
+		} else {
+			isNetDelay = true;
+			console.log("Step:", stepTime, "丢包，暂停游戏")
+		}
 	}
 
 	// frame定时器
 	var stepUpdateCounter = 0;
 	function update(dt) {
-		var now = getTime();
+		var now = getTime()
 		if(gameStatus == STATUS.START) {
 			stepUpdateCounter += dt;
 			if(stepUpdateCounter >= stepInterval) {
@@ -228,16 +204,18 @@ $(function () {
 				context.fillRect(obj.x, obj.y, 30, 30);
 			}
 		} else if(gameStartTime != 0 && now > gameStartTime) {
-			console.log("游戏开始:", now);
-			gameStatus = STATUS.START;
+			if((now - gameStartTime) % stepInterval < 20) {
+				console.log("游戏开始:", now);
+				gameStatus = STATUS.START;
+			}
 		}
 	}
 
 	// 启动定时器
-	var lastUpdate = getTime();
+	var lastUpdate = Date.now();
 	setInterval(function() {
-		var now = getTime();
-		var dt = (now - lastUpdate) / 1000;
+		var now = Date.now();
+		var dt = now - lastUpdate;
 		lastUpdate = now;
 		update(dt)
 		if(isConnected == true) {
@@ -268,11 +246,6 @@ $(function () {
 		} else {
 			socket.emit("join", account);
 		}
-	});
-
-	// 模拟增加20帧丢包
-	$('#loss_btn').click(function(){
-		simulateLossCount += 20;
 	});
 
 	// 断线重连

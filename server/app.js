@@ -7,7 +7,7 @@ var g_commands_histroy = new Array(); // 历史指令，用于断线重连
 var g_joinCount = 0; // 已准备的人数
 var g_maxJoinCount = 2; // 最大人数
 var g_stepTime = 0; // 当前step时间戳
-var g_stepInterval = 0.20; // 每个step的间隔
+var g_stepInterval = 200; // 每个step的间隔ms
 var g_gameStartTime = 0; // 游戏开始时间
 
 // 游戏状态枚举
@@ -18,7 +18,7 @@ var STATUS = {
 var g_gameStatus = STATUS.WAIT;
 
 io.on('connection', function (socket) {
-	socket.emit("open", socket.id);
+	socket.emit("open", {id:socket.id, stepInterval:g_stepInterval});
 
 	// 获取用户账户
 	function getAccount(socketId) {
@@ -37,9 +37,9 @@ io.on('connection', function (socket) {
 				g_onlines[account] = {socket: socket, online: true};
 				socket.emit('join', {result:true, message:"正在断线重连..."});
 				console.log(account, "重连游戏");
-				socket.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines)});
 				socket.broadcast.emit('system', account + "重新连接！");
 				socket.emit('message', g_commands_histroy);
+				socket.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines), stepTime: g_stepTime + 1});
 				return;
 			}
 		}
@@ -64,7 +64,7 @@ io.on('connection', function (socket) {
 			g_commands = new Array();
 			g_commands_histroy = new Array();
 			console.log("游戏预计开始时间:", g_gameStartTime);
-			io.sockets.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines)});
+			io.sockets.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines), stepTime: g_stepTime});
 		}
 	});
 
@@ -74,9 +74,7 @@ io.on('connection', function (socket) {
 
 	socket.on('message', function(json) {
 		if(g_gameStatus == STATUS.START) {
-			if(json.time != g_stepTime) {
-				json.time = g_stepTime;
-			}
+			// TODO：过滤延迟过大的包
 			json.id = getAccount(socket.id);
 			g_commands.push(json)
 		}
@@ -109,14 +107,14 @@ io.on('connection', function (socket) {
 
 // step定时器
 function stepUpdate() {
-	g_stepTime++;
 	// 过滤同帧多次指令
 	var message = {}
 	for(var key in g_onlines) {
-		message[key] = {time:g_stepTime - 1, id:key};
+		message[key] = {time:g_stepTime, id:key};
 	}
 	for(var i = 0; i < g_commands.length; ++i) {
 		var command = g_commands[i];
+		command.time = g_stepTime;
 		message[command.id] = command;
 	}
 	g_commands = new Array();
@@ -137,12 +135,14 @@ function update(dt) {
 	if(g_gameStatus == STATUS.START) {
 		stepUpdateCounter += dt;
 		if(stepUpdateCounter >= g_stepInterval) {
+			g_stepTime++;
 			stepUpdate();
 			stepUpdateCounter -= g_stepInterval;
 		}
 	} else if(g_gameStartTime != 0 && now > g_gameStartTime) {
 		console.log("游戏开始:", now);
 		g_gameStatus = STATUS.START;
+		stepUpdate();
 	}
 }
 
@@ -150,7 +150,7 @@ function update(dt) {
 var lastUpdate = Date.now();
 setInterval(function() {
 	var now = Date.now();
-	var dt = (now - lastUpdate) / 1000;
+	var dt = now - lastUpdate;
 	lastUpdate = now;
 	update(dt)
 });
