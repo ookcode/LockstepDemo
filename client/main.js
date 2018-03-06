@@ -56,8 +56,6 @@ $(function () {
 	var stepInterval = 0;
 	// 当前step时间戳
 	var stepTime = 0;
-	// 游戏开始时间
-	var gameStartTime = 0;
 	// 输入方向
 	var inputDirection = null;
 	// 游戏状态
@@ -70,21 +68,15 @@ $(function () {
 	var isNetDelay = false;
 	// 是否连接socket
 	var isConnected = false;
-	// 和服务器时间差异
-	var timeDiff = 0
 
 	// 初始化UI显示
 	$("#content").hide();
 	$("#login").show();
 	$("#tips").hide();
 
-	// 服务器时间，用于统一开始时间线
-	function getTime() {
-		return Date.now() + timeDiff
-	}
-
 	// 连接socket
-	socket = io.connect('http://120.78.185.209:3000');
+	// socket = io.connect('http://120.78.185.209:3000');
+	socket = io.connect('http://127.0.0.1:3000');
 
 	// socket连接成功
 	socket.on('open', function(json) {
@@ -101,9 +93,9 @@ $(function () {
 			var id = json.player[i];
 			gameObjects[id] = new GameObject(id);
 		}
-		gameStartTime = json.time;
-		stepTime = json.stepTime;
-		console.log("游戏预计开始时间:", gameStartTime);
+		gameStatus = STATUS.START;
+		stepTime = 0;
+		console.log("游戏开始");
 	});
 
 	// 收到加入游戏结果
@@ -123,6 +115,12 @@ $(function () {
 	// 收到指令
 	socket.on('message',function(json){
 		// 储存收到的指令
+		recvCommands.push(json.commands);
+		stepTime = json.step
+	});
+
+	// 收到历史指令
+	socket.on('remessage',function(json){
 		recvCommands = recvCommands.concat(json);
 	});
 
@@ -132,9 +130,6 @@ $(function () {
 		var server = json.server;
 		var delay = Date.now() - client; // 网络延迟
 		$("#lag").text("延迟：" + delay + "ms")
-		if(delay < 100) {
-			timeDiff = Math.round(server - (client - delay / 2));
-		}
 	});
 
 	// 断线
@@ -153,60 +148,45 @@ $(function () {
 
 	// step定时器
 	function stepUpdate() {
-		stepTime++;
-
-		// 执行指令
-		var hasCurrentStepCommands = false;
-		for(var i = 0; i < recvCommands.length; ++i) {
-			var command = recvCommands[i];
-			var obj = gameObjects[command.id];
-			if(command.direction) {
-				obj.direction = command.direction;
-			}
-			var delay = stepTime - command.time - 1;
-			if(delay == 0) {
-				hasCurrentStepCommands = true;
-				console.log("Step:", stepTime, obj.id, "执行Step:", command.time, "方向:", DIRECTION_STR[obj.direction]);
-			} else {
-				// 丢包补偿
-				obj.move(stepInterval);
-				console.log("Step:", stepTime, obj.id, "补偿Step:", command.time, "方向:", DIRECTION_STR[obj.direction]);
-			}
-		}
-		recvCommands = new Array();
-
-		// 丢包暂停
-		if(hasCurrentStepCommands) {
-			isNetDelay = false;
-		} else {
-			isNetDelay = true;
-			console.log("Step:", stepTime, "丢包，暂停游戏")
-		}
 	}
 
 	// frame定时器
 	var stepUpdateCounter = 0;
 	function update(dt) {
-		var now = getTime()
 		if(gameStatus == STATUS.START) {
 			stepUpdateCounter += dt;
 			if(stepUpdateCounter >= stepInterval) {
 				stepUpdate();
 				stepUpdateCounter -= stepInterval;
 			}
+			var scale = 1;
+			if(recvCommands.length > 2) {
+				scale = 2;
+			}
+			if(recvCommands.length > 0) {
+				var frame = recvCommands[0];
+				var ms = dt * scale;
+				if(frame.ms == undefined) frame.ms = stepInterval;
+				if(frame.ms < ms) ms = frame.ms
+				for (var i = 0; i < frame.length; i++) {
+					var command = frame[i];
+					console.log(command);
+					var obj = gameObjects[command.id];
+					if(command.direction) {
+						obj.direction = command.direction;
+					}
+					obj.move(ms)
+				}
+				frame.ms = frame.ms - ms
+				if(frame.ms == 0) {
+					recvCommands.shift();
+				}
+			}
 			context.clearRect(0, 0, 600, 400);
 			for(var key in gameObjects) {
 				var obj = gameObjects[key];
-				if(!isNetDelay) {
-					obj.move(dt)
-				}
 				context.fillStyle = "#000000";
 				context.fillRect(obj.x, obj.y, 30, 30);
-			}
-		} else if(gameStartTime != 0 && now > gameStartTime) {
-			if((now - gameStartTime) % stepInterval < 20) {
-				console.log("游戏开始:", now);
-				gameStatus = STATUS.START;
 			}
 		}
 	}

@@ -7,8 +7,7 @@ var g_commands_histroy = new Array(); // 历史指令，用于断线重连
 var g_joinCount = 0; // 已准备的人数
 var g_maxJoinCount = 2; // 最大人数
 var g_stepTime = 0; // 当前step时间戳
-var g_stepInterval = 200; // 每个step的间隔ms
-var g_gameStartTime = 0; // 游戏开始时间
+var g_stepInterval = 100; // 每个step的间隔ms
 
 // 游戏状态枚举
 var STATUS = {
@@ -38,8 +37,8 @@ io.on('connection', function (socket) {
 				socket.emit('join', {result:true, message:"正在断线重连..."});
 				console.log(account, "重连游戏");
 				socket.broadcast.emit('system', account + "重新连接！");
-				socket.emit('message', g_commands_histroy);
-				socket.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines), stepTime: g_stepTime + 1});
+				socket.emit('start', {player:Object.keys(g_onlines)});
+				socket.emit('remessage', g_commands_histroy);
 				return;
 			}
 		}
@@ -59,12 +58,10 @@ io.on('connection', function (socket) {
 		}
 		// 开始游戏
 		if(g_joinCount == g_maxJoinCount) {
-			g_gameStatus = STATUS.WAIT;
-			g_gameStartTime = Date.now() + 500;
 			g_commands = new Array();
 			g_commands_histroy = new Array();
-			console.log("游戏预计开始时间:", g_gameStartTime);
-			io.sockets.emit('start', {time: g_gameStartTime, player:Object.keys(g_onlines), stepTime: g_stepTime});
+			g_gameStatus = STATUS.START;
+			io.sockets.emit('start', {player:Object.keys(g_onlines)});
 		}
 	});
 
@@ -74,7 +71,6 @@ io.on('connection', function (socket) {
 
 	socket.on('message', function(json) {
 		if(g_gameStatus == STATUS.START) {
-			// TODO：过滤延迟过大的包
 			json.id = getAccount(socket.id);
 			g_commands.push(json)
 		}
@@ -94,7 +90,6 @@ io.on('connection', function (socket) {
 			if(isGameOver) {
 				g_joinCount = 0;
 				g_stepTime = 0;
-				g_gameStartTime = 0;
 				g_gameStatus = STATUS.WAIT;
 				g_onlines = {};
 				console.log("游戏结束");
@@ -124,8 +119,8 @@ function stepUpdate() {
 	for(var key in message) {
 		commands.push(message[key]);
 	}
-	g_commands_histroy = g_commands_histroy.concat(commands);
-	io.sockets.emit('message', commands);
+	g_commands_histroy.push(commands);
+	io.sockets.emit('message', {commands : commands, step : g_stepTime});
 }
 
 // frame定时器
@@ -139,10 +134,6 @@ function update(dt) {
 			stepUpdate();
 			stepUpdateCounter -= g_stepInterval;
 		}
-	} else if(g_gameStartTime != 0 && now > g_gameStartTime) {
-		console.log("游戏开始:", now);
-		g_gameStatus = STATUS.START;
-		stepUpdate();
 	}
 }
 
