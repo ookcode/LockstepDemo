@@ -31,6 +31,7 @@ io.on('connection', function (socket) {
 	socket.on('join', function(account) {
 		// 顶号/断线重连
 		if(g_onlines[account]) {
+			g_onlines[account].socket.emit('system', "被顶号了")
 			g_onlines[account].socket.disconnect()
 			if(g_gameStatus == STATUS.START) {
 				g_onlines[account] = {socket: socket, online: true}
@@ -45,7 +46,7 @@ io.on('connection', function (socket) {
 		// 房间已满
 		if(g_joinCount == g_maxJoinCount) {
 			console.log("房间已满", account, "加入失败")
-			socket.emit('join', {result:false, message:"房间已满！"})
+			socket.emit('system', "房间已满")
 			socket.disconnect()
 			return
 		}
@@ -73,7 +74,9 @@ io.on('connection', function (socket) {
 		if(g_gameStatus == STATUS.START) {
 			// TODO:过滤高延迟的包 (json.step)
 			json.id = getAccount(socket.id)
-			g_commands.push(json)
+			if(json.id) {
+				g_commands.push(json)
+			}
 		}
 	})
 
@@ -89,6 +92,7 @@ io.on('connection', function (socket) {
 				}
 			}
 			if(isGameOver) {
+				io.sockets.emit('system', "游戏结束")
 				g_joinCount = 0
 				g_stepTime = 0
 				g_gameStatus = STATUS.WAIT
@@ -122,7 +126,7 @@ function stepUpdate() {
 	}
 	g_commands_histroy.push(commands)
 	for(var key in g_onlines) {
-		g_onlines[key].socket.emit('message', [commands])
+		g_onlines[key].socket.emit('message', new Array(commands))
 	}
 }
 
