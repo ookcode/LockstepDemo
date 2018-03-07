@@ -22,6 +22,11 @@ var STATUS = {
 	START:2
 }
 
+// 游戏宽高
+var WIDTH = 320
+var HEIGHT = 400
+var BOX_SIZE = 30
+
 // 游戏对象
 var GameObject = function(id) {
 	this.id = id
@@ -31,27 +36,35 @@ var GameObject = function(id) {
 	this.speed = 100
 	this.move = function (dt) {
 		dt = dt / 1000
+		var x = this.x
+		var y = this.y
 		switch(this.direction) {
 			case DIRECTION.UP:
 			{
-				this.y -= this.speed * dt
+				y -= this.speed * dt
 				break
 			}
 			case DIRECTION.DOWN:
 			{
-				this.y += this.speed * dt
+				y += this.speed * dt
 				break
 			}
 			case DIRECTION.LEFT:
 			{
-				this.x -= this.speed * dt
+				x -= this.speed * dt
 				break
 			}
 			case DIRECTION.RIGHT:
 			{
-				this.x += this.speed * dt
+				x += this.speed * dt
 				break
 			}
+		}
+		if(x <= (WIDTH - BOX_SIZE) && x >= 0) {
+			this.x = x
+		}
+		if(y <= (HEIGHT - BOX_SIZE) && y >= 0) {
+			this.y = y
 		}
 	}
 }
@@ -73,6 +86,12 @@ $(function () {
 	var gameObjects = {}
 	// 是否连接socket
 	var isConnected = false
+	// 当前执行中的指令
+	var runningCommands = null
+	// 当前用户
+	var currentAccount = null
+	// 是否正在加速运行延迟到达的包
+	var isFastRunning = false
 
 	// 初始化UI显示
 	$("#content").hide()
@@ -88,6 +107,14 @@ $(function () {
 		stepInterval = json.stepInterval
 		id = json.id
 		console.log("Socket连接成功：", id)
+		// 断线重连自动登录
+		if(localStorage.account) {
+			setTimeout(function () {
+				$("#account").val(localStorage.account)
+				localStorage.account = ""
+				$('#start_btn').click()
+			}, 0)
+		}
 	})
 
 	// 收到游戏开始事件
@@ -99,7 +126,7 @@ $(function () {
 		}
 		gameStatus = STATUS.START
 		stepTime = 0
-		console.log("游戏开始")
+		showTips("游戏开始")
 	})
 
 	// 收到加入游戏结果
@@ -146,11 +173,15 @@ $(function () {
 
 	// 断线
 	socket.on('disconnect',function() {
-		showTips("与服务器断开连接!")
+		console.log("与服务器断开连接!")
 	})
 
 	// 发送指令
 	function sendCommand() {
+		if(isFastRunning) {
+			console.log("正在加速执行延迟包，无法发送指令！")
+			return
+		}
 		var direction = inputDirection
 		socket.emit("message", {
 			direction: direction,
@@ -176,34 +207,42 @@ $(function () {
 			// 积攒的包过多时要加速运行
 			var scale = Math.ceil(recvCommands.length / 3)
 			if(scale > 10) scale = 10
-
+			isFastRunning = (scale > 1)
 			// 执行指令
 			if(recvCommands.length > 0) {
-				var step = recvCommands[0]
 				var ms = dt * scale
-				if(step.ms == undefined) step.ms = stepInterval
-				if(step.ms < ms) ms = step.ms
-				for (var i = 0; i < step.length; i++) {
-					var command = step[i]
-					if(step.ms == stepInterval) console.log(command)
+				if(runningCommands == null) {
+					runningCommands = recvCommands[0]
+					runningCommands.ms = stepInterval
+				}
+				if(runningCommands.ms < ms) {
+					ms = runningCommands.ms
+				}
+				for (var i = 0; i < runningCommands.length; i++) {
+					var command = runningCommands[i]
+					if(runningCommands.ms == stepInterval) console.log(command)
 					var obj = gameObjects[command.id]
 					if(command.direction) {
 						obj.direction = command.direction
 					}
 					obj.move(ms)
 				}
-				step.ms = step.ms - ms
-				if(step.ms == 0) {
+				runningCommands.ms = runningCommands.ms - ms
+				if(runningCommands.ms == 0) {
 					recvCommands.shift()
+					runningCommands = null
 				}
 			}
 
 			// 绘制
-			context.clearRect(0, 0, 600, 400)
+			context.clearRect(0, 0, WIDTH, HEIGHT)
 			for(var key in gameObjects) {
 				var obj = gameObjects[key]
 				context.fillStyle = "#000000"
-				context.fillRect(obj.x, obj.y, 30, 30)
+				context.fillRect(obj.x, obj.y, BOX_SIZE, BOX_SIZE)
+				context.font = "15px Courier New";
+				context.fillStyle = "#FFFFFF";
+				context.fillText(key, obj.x, obj.y + BOX_SIZE, BOX_SIZE);
 			}
 		}
 	}
@@ -255,18 +294,19 @@ $(function () {
 
 	// 开始游戏
 	$('#start_btn').click(function(){
-		var account = $("#account").val()
+		currentAccount = $("#account").val()
 		if(isConnected == false) {
 			showTips("连接服务器失败！")
-		} else if(account == "") {
+		} else if(currentAccount == "") {
 			showTips("账号不能为空！")
 		} else {
-			socket.emit("join", account)
+			socket.emit("join", currentAccount)
 		}
 	})
 
 	// 断线重连
 	$('#reconnect_btn').click(function(){
+		localStorage.account = currentAccount
 		location.reload()
 	})
 })
